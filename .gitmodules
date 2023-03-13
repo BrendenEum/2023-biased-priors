@@ -1,0 +1,3 @@
+[submodule "biased-priors-manuscript"]
+	path = biased-priors-manuscript
+	url = https://github.com/BrendenEum/biased-priors-manuscript.git
