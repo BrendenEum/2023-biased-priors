@@ -23,10 +23,15 @@ rm(list = ls())
 seed = 1337
 library(dplyr)      # pipeline %>%
 
-datadir <- '../data' #data
-figdir <- '../00 pilot/figures' #figures
-outdir <- '../00 pilot/output' #output
-tempdir <- '../00 pilot/temp' #temp folder
+rawdatadir <- '../data' # raw data
+datadir <- '../00 pilot/clean_data' # clean data
+figdir <- '../00 pilot/figures' # figure folder
+tbldir <- '../00 pilot/tables' # figure folder
+tempdir <- '../00 pilot/temp' # temp folder
+textdir <- "../00 pilot/text" # text folder
+final.figdir <- "../biased-priors-manuscript/figures"
+final.txtdir <- "../biased-priors-manuscript/text-files"
+final.tbldir <- "../biased-priors-manuscript/tables"
 
 ```
 
@@ -57,7 +62,7 @@ variables_of_interest <- c(
 )
 
 data.raw <- read.csv(
-  file = file.path(datadir, "pilotdata_exp_105297-v6_task-unu1.csv")
+  file = file.path(rawdatadir, "pilotdata_exp_105297-v6_task-unu1.csv")
 )
 
 data.main <- data.raw[data.raw$Participant.Status=="complete", variables_of_interest]
@@ -170,7 +175,7 @@ for (sub in dropped.QC$subject) {
 
 write.csv(
   data.main, 
-  file.path(outdir, "data.main.csv")
+  file.path(datadir, "data.main.csv")
 )
 
 ```

@@ -28,16 +28,17 @@ library(ggplot2) #plots... duh
 library(grid) #combine plots
 library(gridExtra) #more combining plots
 library(ggsci) #I like the Futurama color palette <3
-library(brms) #hierarchical regressions
-library(runjags) #MCMC
-library(effsize) #cohen's big fat d
 library(latex2exp) #for fancy math stuffs in the plots
-library(ggpubr) #column titles for grid.arrange plots
 
-datadir <- '../data' #data
-figdir <- '../00 pilot/figures' #figures
-outdir <- '../00 pilot/output' #output
-tempdir <- '../00 pilot/temp' #temp folder
+rawdatadir <- '../data' # raw data
+datadir <- '../00 pilot/clean_data' # clean data
+figdir <- '../00 pilot/figures' # figure folder
+tbldir <- '../00 pilot/tables' # figure folder
+tempdir <- '../00 pilot/temp' # temp folder
+textdir <- "../00 pilot/text" # text folder
+final.figdir <- "../biased-priors-manuscript/figures"
+final.txtdir <- "../biased-priors-manuscript/text-files"
+final.tbldir <- "../biased-priors-manuscript/tables"
 
 ```
 
@@ -125,7 +126,7 @@ ggplot <- function(...) ggplot2::ggplot(...) +
 
 ```{r}
 
-data.main <- read.csv(file.path(outdir, "data.main.csv"))
+data.main <- read.csv(file.path(datadir, "data.main.csv"))
 
 ```
 
@@ -176,8 +177,10 @@ ggsave(
   file.path(figdir, "p.SanityCheckAcc.pdf"),
   plot = p.SanityCheckAcc
 )
-
-p.SanityCheckAcc
+ggsave(
+  file.path(final.figdir, "p.SanityCheckAcc.pdf"),
+  plot = p.SanityCheckAcc
+)
 
 ```
 
@@ -217,6 +220,10 @@ plot(p.SanityCheckRT)
 
 ggsave(
   file.path(figdir, "p.SanityCheckRT.pdf"),
+  plot = p.SanityCheckRT
+)
+ggsave(
+  file.path(final.figdir, "p.SanityCheckRT.pdf"),
   plot = p.SanityCheckRT
 )
 
@@ -264,6 +271,10 @@ plot(p.Accuracy)
 
 ggsave(
   file.path(figdir, "p.Accuracy.pdf"),
+  plot = p.Accuracy
+)
+ggsave(
+  file.path(final.figdir, "p.Accuracy.pdf"),
   plot = p.Accuracy
 )
 
@@ -316,20 +327,39 @@ ggsave(
   file.path(figdir, "p.AccuracyByCorrectColor.pdf"),
   plot = p.AccuracyByCorrectColor
 )
+ggsave(
+  file.path(final.figdir, "p.AccuracyByCorrectColor.pdf"),
+  plot = p.AccuracyByCorrectColor
+)
 
 
 # TEXT
 
+ttest.pval <- c()
+ind <- 1
+
 for (stimulusDuration in c(100, 300, 500, 750, 1000, 3000)) {
   
-  t.test(
+  ttest.pval[ind] <- t.test(
     x = temp[temp$stimDur==stimulusDuration & temp$correctResponse==0, "accuracy.sub"],
     y = temp[temp$stimDur==stimulusDuration & temp$correctResponse==1, "accuracy.sub"],
     alternative = "two.sided"
-  ) %>%
-  print()
+  )$p.value
+  ind <- ind + 1
   
 }
+
+mini <- min(ttest.pval) %>% round(2) %>% toString()
+writeLines(
+  mini, 
+  file.path(final.txtdir, "accuracyByColor_min_pval.txt")
+)
+
+maxi <- max(ttest.pval) %>% round(2) %>% toString()
+writeLines(
+  maxi, 
+  file.path(final.txtdir, "accuracyByColor_max_pval.txt")
+)
 
 ```
 
@@ -371,6 +401,10 @@ plot(p.RT)
 
 ggsave(
   file.path(figdir, "p.RT.pdf"),
+  plot = p.RT
+)
+ggsave(
+  file.path(final.figdir, "p.RT.pdf"),
   plot = p.RT
 )
 
@@ -418,6 +452,10 @@ plot(p.RTByCorrect)
 
 ggsave(
   file.path(figdir, "p.RTByCorrect.pdf"),
+  plot = p.RTByCorrect
+)
+ggsave(
+  file.path(final.figdir, "p.RTByCorrect.pdf"),
   plot = p.RTByCorrect
 )
 
@@ -473,12 +511,16 @@ p.ChoiceRedBias <- ggplot(data=pdata.ChoiceRedBias, aes(x=stimDur, y=y, group=co
     legend.position = c(.1,.15)
   )
 
+plot(p.ChoiceRedBias)
+
 ggsave(
   file.path(figdir, "fig_ChoiceRedBias.pdf"),
   plot = p.ChoiceRedBias
 )
-
-p.ChoiceRedBias
+ggsave(
+  file.path(final.figdir, "fig_ChoiceRedBias.pdf"),
+  plot = p.ChoiceRedBias
+)
 
 ```
 
@@ -530,12 +572,16 @@ p.ChoiceBlueBias <- ggplot(data=pdata.ChoiceBlueBias, aes(x=stimDur, y=y, group=
     legend.position = c(.1,.15)
   )
 
+plot(p.ChoiceBlueBias)
+
 ggsave(
   file.path(figdir, "fig_ChoiceBlueBias.pdf"),
   plot = p.ChoiceBlueBias
 )
-
-p.ChoiceBlueBias
+ggsave(
+  file.path(final.figdir, "fig_ChoiceBlueBias.pdf"),
+  plot = p.ChoiceBlueBias
+)
 
 ```
 
@@ -581,12 +627,16 @@ p.ChoiceVarAll <- ggplot(data=pdata.ChoiceVarAll, aes(x=stimDur, y=y, group=corr
     legend.position = c(.1,.15)
   )
 
+plot(p.ChoiceVarAll)
+
 ggsave(
   file.path(figdir, "fig_ChoiceVarAll.pdf"),
   plot = p.ChoiceVarAll
 )
-
-p.ChoiceVarAll
+ggsave(
+  file.path(final.figdir, "fig_ChoiceVarAll.pdf"),
+  plot = p.ChoiceVarAll
+)
 
 ```
 
@@ -632,12 +682,16 @@ p.ChoiceVarRedBias <- ggplot(data=pdata.ChoiceVarRedBias, aes(x=stimDur, y=y, gr
     legend.position = c(.1,.15)
   )
 
+plot(p.ChoiceVarRedBias)
+
 ggsave(
   file.path(figdir, "fig_ChoiceVarRedBias.pdf"),
   plot = p.ChoiceVarRedBias
 )
-
-p.ChoiceVarRedBias
+ggsave(
+  file.path(final.figdir, "fig_ChoiceVarRedBias.pdf"),
+  plot = p.ChoiceVarRedBias
+)
 
 ```
 
@@ -683,12 +737,16 @@ p.ChoiceVarBlueBias <- ggplot(data=pdata.ChoiceVarBlueBias, aes(x=stimDur, y=y, 
     legend.position = c(.1,.15)
   )
 
+plot(p.ChoiceVarBlueBias)
+
 ggsave(
   file.path(figdir, "fig_ChoiceVarBlueBias.pdf"),
   plot = p.ChoiceVarBlueBias
 )
-
-p.ChoiceVarBlueBias
+ggsave(
+  file.path(final.figdir, "fig_ChoiceVarBlueBias.pdf"),
+  plot = p.ChoiceVarBlueBias
+)
 
 ```
 

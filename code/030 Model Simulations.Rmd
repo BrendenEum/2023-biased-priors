@@ -10,6 +10,17 @@ output: html_notebook
 library(dplyr)
 library(ggplot2)
 library(plotrix)
+
+rawdatadir <- '../data' # raw data
+datadir <- '../00 pilot/clean_data' # clean data
+figdir <- '../00 pilot/figures' # figure folder
+tbldir <- '../00 pilot/tables' # figure folder
+tempdir <- '../00 pilot/temp' # temp folder
+textdir <- "../00 pilot/text" # text folder
+final.figdir <- "../biased-priors-manuscript/figures"
+final.txtdir <- "../biased-priors-manuscript/text-files"
+final.tbldir <- "../biased-priors-manuscript/tables"
+
 set.seed(4)
 nSim = 100
 
@@ -137,7 +148,14 @@ p.estimate <- ggplot(data=pdata, aes(x=pr, y=estimate.mean)) +
 
 p.estimate
 
-ggsave("simpleBayes.estimate.pdf", p.estimate)
+ggsave(
+  file.path(figdir, "simpleBayes.estimate.pdf"),
+  p.estimate
+)
+ggsave(
+  file.path(final.figdir, "simpleBayes.estimate.pdf"),
+  p.estimate
+)
 
 ```
 
@@ -160,7 +178,14 @@ p.variance <- ggplot(data=pdata, aes(x=pr, y=variance)) +
 
 p.variance
 
-ggsave("simpleBayes.variance.pdf", p.variance)
+ggsave(
+  file.path(figdir,"simpleBayes.variance.pdf"), 
+  p.variance
+)
+ggsave(
+  file.path(final.figdir,"simpleBayes.variance.pdf"), 
+  p.variance
+)
 
 ```
 
