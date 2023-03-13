@@ -1,0 +1,444 @@
+---
+title: "Biased Priors"
+author: Brenden Eum
+date: June 16, 2022
+output: 
+  html_document: 
+    theme: united
+    toc: yes
+    toc_float: yes
+    toc_depth: 2
+    number_sections: yes
+    code_folding: hide
+    df_print: default
+---
+
+# Introduction
+
+This notebook will take the raw data and run preliminary analysis.
+
+## The question
+
+The way sequentially sampled information is integrated into beliefs has important implications for how choices are made.
+Some models update beliefs using KL divergence between a default distribution and a choice probability distribution (see Cheyette and Piantadosi, 2020 Nat Hum Behav).
+Bayesian models begin with a prior and use information to update posteriors using Bayes rule.
+Even within this class of models, agents can best respond to the maximum a posteriori estimate of the posterior or to the entire posterior distribution, generating different choice probabilities in response to different stimulus display times. 
+
+Our goal here is to causally manipulate early noise using exogenous and unpredictable stimulus display times.
+The amount of early noise, in addition to a biased prior, will allow us to differentiate the predictions of the models and to compare these predictions with experiments.
+
+## The task
+
+Subjects complete 400 trials split into 4 blocks.
+10 practice trials before the experiment begins.
+
+<center>
+![](../output/stimulus_display.PNG)
+</center>
+
+100 red or green balls displayed randomly and uniformly in a circle around center of the screen.
+Proportions of interest will be 52-48, favoring red or green.
+
+Each block has 100 trials, 90 of which are 52-48, and 10 of which are significantly easier (sanity checks, 90-10, 80-20).
+
+The stimuli are displayed for an exgoenous amount of time between 0 and 7 seconds.
+Right now, this is arbitrarily set to {0.1, 0.3, 0.5, 0.75, 1, 3, 5, 7}.
+Let's focus on the distribution of the display times for the 90 trials which are not sanity checks.
+Similar proportions of display times across all trials, though favoring low display times since I can't perfectly balance trials with a 60-40 split and since I expect there to be more noisiness in decisions at lower display times.
+{0.1, 0.3, 0.5, 0.75, 1, 3, 5, 7} = {`r 12*4`, `r 12*4`, `r 12*4`, `r 12*4`, `r 11*4`, `r 11*4`, `r 10*4`, `r 10*4`}
+
+<center>
+![](../output/choice_screen.PNG)
+</center>
+
+After exogenous display, subjects are asked to make a choice between green or red (which had more dots).
+They have 2 seconds to respond, otherwise the trial will record a blank response and subject will be told to make faster decisions next trial.
+
+<center>
+![](../output/feedback_screen.PNG)
+</center>
+
+Feedback of the selection is displayed for 1 second.
+
+### TO DO
+
+- Subjects complain that the task is incredibly boring. I'm worried this will result in random choice strategy as the experiment goes on.
+- We can lower the number of trials and just collect more subjects instead?
+- Online experiment?
+
+## Expected results
+
+We expect choices to be biased towards the prior at short display times, tend towards random at medium display times, then diverge from each other (depending on the cue displayed in the trial) at long display times.
+
+The top subfigure would indicate a best response to a sample from the posterior belief distribution. The middle subfigure would indicate a best response to the maximum a posteriori estimate of the posterior belief distribution. The bottom subfigure would indicate a non-Bayesian belief formation algorithm.
+
+<center>
+![](../output/expected_results.png)
+</center>
+
+There are three main implications:
+
+- The optimal decision rule in response to the beliefs would imply that people behave as in the upper figure. So first and foremost, people are not implementing the optimal decision rule.
+- We can causally manipulate how much people rely on their prior vs their evidence by manipulating early noise.
+- As people continue to sample, they are reducing the variance of their noisy representation of the information, meaning that beliefs will dynamically re-weight prior and evidence over the course of a single decision. This results in the Prat-Carrabin result where there is flipping during a trial: underreaction to information early, and overreaction to information later.
+
+## Preamble
+
+Start fresh, set seed, load libraries, set directories, and dictate whether you want analysis to occur quickly and verbose-ly.
+
+```{r load, message=FALSE, warning=FALSE}
+
+rm(list = ls())
+seed = 1337
+library(dplyr) #pipeline %>%
+library(plotrix) #std.error
+library(ggplot2) #plots... duh
+library(grid) #combine plots
+library(gridExtra) #more combining plots
+library(ggsci) #I like the Futurama color palette <3
+library(brms) #hierarchical regressions
+library(runjags) #MCMC
+library(effsize) #cohen's big fat d
+library(latex2exp) #for fancy math stuffs in the plots
+library(ggpubr) #column titles for grid.arrange plots
+
+datadir <- '../../OLD/OLD data/' #the only directory you need to set manually
+
+quickly <- F #skip model fitting and use old estimates
+show.reg.progress <- 0 #1=yes, 0=no
+
+```
+
+Useful functions.
+- Estimate mode
+- Estimate HDI (conf=[0,1])
+
+```{r}
+
+# estimate and return the mode of a distribution (in this case, the posterior)
+estimate_mode <- function(x) {
+  d <- density(x)
+  return( d$x[which.max(d$y)] )
+}
+
+# estimate 95 HDI
+estimate_hdi <- function(x, conf=.95) {
+  lb <- 0 + (1-conf)/2
+  ub <- 1 - (1-conf)/2
+  d <- quantile(x, probs = c(lb,ub), na.rm = F,
+           names = TRUE)
+  return(d)
+}
+
+```
+
+
+Global settings for figures.
+
+```{r}
+
+ggplot <- function(...) ggplot2::ggplot(...) + 
+  theme_classic() +
+  scale_fill_brewer(palette = "Set2") +
+  scale_color_brewer(palette = "Set2") +
+  coord_cartesian(expand=FALSE) +
+  theme(
+    legend.position="None",
+    legend.background=element_blank(),
+    plot.margin = unit(c(.5,.5,.5,.5), "cm")
+  )
+  
+
+linesize = 2
+markersize = .1
+ribbonalpha = 0.33
+
+```
+
+Global settings for regressions.
+
+```{r}
+
+if (quickly==T) {refit="on_change"} else {refit="always"}
+
+brm <- function(...)
+  brms::brm(
+    ...,
+    iter = 6000, #samples from the posterior
+    warmup = 3000, #part of a healthy workout
+    chains = 3, #parallel
+    cores = 3, #parallel
+    backend = 'rstan',
+    seed = seed, #based gaming
+    refresh = show.reg.progress, #0 = dont show updates of sampling progress. 1 = what do you think...?
+    file_refit = refit #if quickly is set to false, then re-run the regressions. o/w, pull reg results from temp files.
+  ) 
+
+```
+
+
+
+----------------------------------------------------------------------------------------------------------------------------
+
+# Data cleaning
+
+In this section, I take the raw data and turn it into datasets for analyses. Part of this process involves a pre-commitment to good quality data. 
+A warning will appear if at least one subject took too long to answer 5% or more of their trials. 
+Another warning will appear after this if at least one subject failed to achieve 90% accuracy across the sanity check trials.
+
+### TO DO
+- Instead of preregistering, are we all ok with an exploratory-confimatory-joint analysis?
+
+Combine all subjects' datasets into one.
+
+```{r}
+
+raw_files <- list.files(path=datadir)
+exploratory_data <- raw_files
+#confirmatory_data <- raw_files[(floor(length(raw_files)/2)+1):length(raw_files)]
+
+data <- data.frame()
+for (file in raw_files) {
+  raw_file <- read.csv(file = file.path(datadir, file))
+  data <- bind_rows(data, raw_file)
+}
+
+data <- data[data$task=="response", c("task","response","rt","correct_response","correct","display_dur","time_elapsed")]
+data$subject <- 1
+
+```
+
+Check how many observations are missing per subject. 
+If it's less than a sufficient threshold (say below 5\%), then let's go ahead and drop them.
+
+```{r}
+
+subjects <- unique(data$subject)
+temp <- c(1:length(subjects))
+fail <- c(1:length(subjects))
+
+for (ind in temp) {
+  temp[ind] <- data[data$subject==subjects[ind],'response'] %>% #could be response, rt, 
+    is.na() %>%
+    sum()
+  temp[ind] <- temp[ind] / nrow(data[data$subject==subjects[ind],])
+  fail[ind] <- (temp[ind] > 0.05)
+}
+
+if (sum(fail) != 0) {
+  print("Some subjects missed more than 5% of all their trials. Go check who using 'fail'.")
+} else {
+  print("All subjects missed less than 5% of all their trials. Clear to proceed.")
+  data <- na.omit(data)
+}
+
+```
+
+Data transformations.
+Save the cleaned dataset in the output folder.
+
+```{r}
+
+rownames(data) <- NULL #reset row indices (but trials variable will stay the same)
+
+data <- data %>%
+  mutate(
+    subject = factor(subject) %>% as.numeric(), #change initials to numeric.
+    response = ifelse(response=="j", 1,0) , #choose red = 1, choose blue = 0
+    correct_response = ifelse(correct_response=="j", 1,0) %>% factor(
+      levels=c(0,1), 
+      labels=c("Favors Blue", "Favors Red")
+    ) # does stimulus favor red?
+  )
+
+```
+
+Split the data into real data and sanity checks.
+
+```{r}
+
+sanitychecks <- data[data$difficulty!=48 & data$difficulty!=52,]
+data <- data[data$difficulty==48 | data$difficulty==52,]
+
+```
+
+Double check sanity checks.
+If subjects fail more than 50\% of the sanity checks, then throw up an error.
+
+```{r}
+
+subjects <- unique(sanitychecks$subject)
+temp <- c(1:length(subjects))
+
+for (ind in temp) {
+  temp[ind] <- sanitychecks[sanitychecks$subject==subjects[ind],'is_correct'] %>%
+    sum()
+  temp[ind] <- temp[ind] / length(sanitychecks[sanitychecks$subject==subjects[ind],'is_correct'])
+  temp[ind] <- (temp[ind] < 0.90)
+}
+
+if (sum(temp) != 0) {
+  print("Some subjects failed more than 90% of sanity checks. Go check who using 'temp'.")
+} else {
+  print("All subjects passed more than 90% of sanity checks. Clear to proceed.")
+}
+
+```
+
+Split data into exploratory and confirmatory data.
+Then save.
+
+```{r}
+##############
+## Exploratory
+##############
+
+source('set_e_dir.R')
+
+save(data, file=file.path(outdir,"clean_data.RData"))
+```
+
+
+----------------------------------------------------------------------------------------------------------------------------
+
+# Analysis
+
+## Choice wrt stimulus duration, grouped by cue type
+
+Graph the probability of choosing red as a function of exogenous stimulus display time.
+Plot the mean and SE of the probabilities across subjects.
+
+```{r, message=F}
+
+##############
+## Exploratory
+##############
+
+source('set_e_dir.R')
+source('load_data.R')
+
+pdata <- data %>%
+  group_by(subject, display_dur, correct_response) %>%
+  summarize(
+    mean.response = mean(response)
+  ) %>%
+  ungroup() %>%
+  group_by(display_dur, correct_response) %>%
+  summarize(
+    y = mean(mean.response),
+    se = std.error(mean.response)
+  )
+
+p.choice <- ggplot(data=pdata, aes(x=display_dur, y=y, group=correct_response)) +
+  geom_hline(
+    yintercept=.5, 
+    color='grey'
+  ) +
+  geom_line(
+    aes(color=correct_response), 
+    size=linesize
+  ) +
+  geom_ribbon(
+    aes(ymin=y-se, ymax=y+se, fill=correct_response), 
+    size=linesize, 
+    alpha=ribbonalpha, 
+    show.legend=F
+  ) +
+  labs(
+    y = "Pr(choose red)",
+    x = "Stimulus duration (s)",
+    color = "Stimulus"
+  ) +
+  coord_cartesian(
+    xlim = c(0,NA),
+    ylim = c(0,1)
+  ) +
+  theme(
+    legend.position = c(.1,.15)
+  ) 
+
+p.choice
+
+ggsave(
+  file.path(figdir, "fig_choice(disp_time).pdf"),
+  p.choice
+)
+
+```
+
+- With 0.1 second display, subjects rely on their prior, resulting in a mean probability of choosing red greater than 50%, even for cues that favor green.
+- Even with a 0.1 second display, there seems to be a difference in performance when the cue favors green versus when the cue favors red. This means that subjects can still do some discrimination when display is extremely rapid.
+- Can't quite tell yet, but doesn't seem like choices when cue favors red grow more random at middle display times and more accurate at long display times. In fact, I'm not sure we can reject a constant level of performance in this case without more data.
+- Choice for red when the cue favors green starts above 50%, potentially driven by the prior. This choice probability decreases in display time.
+
+### TO DO
+
+- If we are looking for the domain of display times to observe how these two choice probabilities tend towards 50% then split from each other, perhaps we only need to look at display times $\in (0,3)$ since both choice probabilities seem to dip to 50% before 1 second.
+- I think we need disproportionately more trials at this middle display time where choices appear more random. It seems the effect of the prior is quite strong at short display times and that choice probabilities diverge at long display times, but it's not really clear what is happening in the middle. 
+
+## Choice wrt stimulus duration, grouped by cue type
+
+Graph the probability of choosing red as a function of exogenous stimulus display time.
+Plot the mean and SE of the probabilities across subjects.
+
+```{r, message=F, echo=F}
+
+##############
+## Exploratory
+##############
+
+source('set_e_dir.R')
+source('load_data.R')
+
+pdata <- data %>%
+  mutate(
+    x = cut(stim_end+rt, breaks=seq(0,6,.5))
+  ) %>%
+  group_by(subject, x, cue) %>%
+  summarize(
+    mean.choice = mean(choice)
+  ) %>%
+  ungroup() %>%
+  group_by(x, cue) %>%
+  summarize(
+    y = mean(mean.choice),
+    se = std.error(mean.choice)
+  )
+
+p.choice <- ggplot(data=pdata, aes(x=x, y=y, group=cue)) +
+  geom_hline(
+    yintercept=.5, 
+    color='grey'
+  ) +
+  geom_line(
+    aes(color=cue), 
+    size=linesize
+  ) +
+  geom_ribbon(
+    aes(ymin=y-se, ymax=y+se, fill=cue), 
+    size=linesize, 
+    alpha=ribbonalpha, 
+    show.legend=F
+  ) +
+  labs(
+    y = "Pr(choose red)",
+    x = "Display + response time (s)",
+    color = "Cue"
+  ) +
+  coord_cartesian(
+    xlim = c(0,NA),
+    ylim = c(0,1)
+  ) +
+  theme(
+    legend.position = c(.1,.15),
+    axis.text.x = element_text(angle = 45, hjust=1)
+  ) 
+
+p.choice
+
+ggsave(
+  file.path(figdir, "fig_choice(rt).pdf"),
+  p.choice
+)
+
+```

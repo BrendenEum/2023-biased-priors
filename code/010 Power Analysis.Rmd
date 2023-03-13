@@ -1,0 +1,87 @@
+---
+title: "Power Analysis"
+author: Brenden Eum
+date: May 19, 2022
+output: 
+  html_document: 
+    theme: united
+    toc: yes
+    toc_float: yes
+    toc_depth: 2
+    number_sections: yes
+    code_folding: hide
+    df_print: default
+---
+
+# Introduction
+
+The point of this notebook is to run a quick power analysis.
+We are trying to determine the number of observations needed to detect a small, medium, and large effect size.
+
+Recall that the task is for subjects to determine if a pool of 100 balls has more red than green balls, where the exogenous response time is determined by the experimental paradigm.
+For our final results, we intend to look at the probability of choosing "More Red" as a function of exogenous response time, grouped by valid and invalid cues.
+Valid cues are when there are actually more red balls; invalid cues are when there are fewer red balls.
+
+<center>
+![](../output/expected_results.PNG)
+</center>
+
+```{r, echo=F, warning=F}
+library(pwr)
+```
+
+
+# Power Analysis
+
+For a given exogenous response time, we are comparing the probabilities of choosing "More Red" for the valid cue and invalid cue groups.
+This can be accomplished by running a simple t-test to detect effect size.
+Therefore, let's look at how many observations we need to accept or reject the hypothesis that the probability of choosing "More Red" is equal across the two groups.
+Let $n_1$ be the valid cue group; let $n_2$ be the invalid cue group.
+
+Cohen recommends the following guidelines for Cohen's d in the social sciences: 0.2 (small), 0.5 (medium), 0.8 (large).
+
+```{r}
+
+for (d in c(.8, .5, .4, .3)) {
+  
+  result <- pwr.t2n.test(
+    n1 = 200,
+    n2 = NULL,
+    d = d,
+    sig.level = .05,
+    power = .95
+  )
+  
+  print(result)
+  
+} 
+```
+
+Clearly, the number of trials that I need to detect an effect is decreasing in the size of the effect.
+If the effect size is small and I run `r ceiling(result$n1)` valid cue trials, I'll need `r ceiling(result$n2)` invalid cue trials to detect any effect with 90\% probability.
+
+I want to be able to detect small effects, but I'm limited in the number of trials I can run.
+I also want a 60-40 balance of $n_1$ and $n_2$ trials since the whole experiment is contingent upon a biased prior.
+I'll play around with the number of $n_1$ trials until I get as close to a 60-40 balance as possible.
+
+I'm going to select a medium effect size of .4, 95\% confidence, and 95\% chance of detecting the effect.
+
+```{r}
+result <- pwr.t2n.test(
+  n1 = 205,
+  n2 = NULL,
+  d = .4,
+  sig.level = .05,
+  power = .95
+)
+
+print(result)
+print(result$n1/(result$n1+ceiling(result$n2)))
+```
+
+A ratio of 60-40 valid-invalid occurs when I have `r result$n1` trials of valid cues and `r ceiling(result$n2)` trials of invalid cues.
+This is a total of `r result$n1+ceiling(result$n2)` trials.
+
+Rounding up to numbers with better LCMs, I choose 216 $n_1$ trials and 140 $n_2$ trials. That's 356 trials of 48-52 combinations. I'll add some easy trials into the mix in order to retain subject's attention. Let's say 44 easy trials, which can double as sanity check trials. In total, 400 trials.
+
+Splitting these into 4 blocks, that means 54 trials with 52 red balls, 35 trials with 48 red balls, and 11 easy trials (say 6 dominant red, 5 dominant green).

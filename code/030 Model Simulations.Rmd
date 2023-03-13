@@ -1,0 +1,166 @@
+---
+title: "Simple Efficient Coding, Bayesian Decoding"
+output: html_notebook
+---
+
+# Preamble
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(plotrix)
+set.seed(4)
+nSim = 100
+
+```
+
+# Set magnitude and hyperpriors
+
+```{r}
+
+x = 2.2
+mu = 2
+px = 1
+
+```
+
+# Functions to calculate estimate and noise
+
+```{r}
+
+getPostMean <- function(x, mu, px, pr) {
+  
+  r = rnorm(1, x, 1/sqrt(pr))
+  beta = pr / (px+pr)
+  estimate = mu + beta*(r - mu)
+  return(estimate)
+  
+}
+
+getPostVar <- function(px, pr) {
+  
+  beta = pr / (px+pr)
+  noise = beta^2/pr
+  return(noise)
+  
+}
+
+```
+
+# How do estimates vary with signal precision?
+
+## * Run simulations
+
+```{r}
+
+signal_precisions = c(1:35)^2/100
+df = data.frame(
+  pr = rep(signal_precisions,nSim), 
+  estimate = rep(signal_precisions,nSim),
+  variance = rep(signal_precisions,nSim),
+  sim = rep(signal_precisions,nSim)
+)
+
+I = 1
+
+for (sim in c(1:nSim)) {
+  for (pr in signal_precisions) {
+  
+    df$pr[I] = pr
+    df$estimate[I] = getPostMean(x, mu, px, pr)
+    df$variance[I] = getPostVar(px, pr)
+    df$sim[I] = sim
+    I = I + 1
+    
+  }
+}
+
+print(df)
+
+```
+
+## * Average over simulations
+
+```{r}
+
+pdata = df %>%
+  group_by(pr) %>%
+  summarize(
+    
+    estimate.se = std.error(estimate),
+    estimate.mean = mean(estimate),
+    
+    variance = mean(variance) # they're all the same, so you could just as well use first(), last(), etc...
+    
+  )
+
+```
+
+## * Plot estimate
+
+```{r}
+
+p.estimate <- ggplot(data=pdata, aes(x=pr, y=estimate.mean)) +
+  
+  geom_hline(
+    yintercept=x,
+    color="darkred",
+    alpha=.2,
+    size=1.5,
+    linetype="dashed"
+  ) +
+  
+  geom_hline(
+    yintercept=mu,
+    color="darkblue",
+    alpha=.2,
+    size=1.5,
+    linetype="dashed"
+  ) +
+  
+  geom_line(
+    size=1
+  ) +
+  
+  geom_ribbon(
+    aes(ymin=estimate.mean-estimate.se, ymax=estimate.mean+estimate.se),
+    alpha = .2
+  ) +
+  
+  theme_classic() +
+  labs(
+    y = "Estimate",
+    x = "Signal Precision"
+  )
+  
+
+p.estimate
+
+ggsave("simpleBayes.estimate.pdf", p.estimate)
+
+```
+
+## * Plot posterior variance
+
+```{r}
+
+p.variance <- ggplot(data=pdata, aes(x=pr, y=variance)) +
+  
+  geom_line(
+    size=1.5
+  ) +
+  
+  theme_classic() +
+  labs(
+    y = "Posterior Variance",
+    x = "Signal Precision"
+  )
+  
+
+p.variance
+
+ggsave("simpleBayes.variance.pdf", p.variance)
+
+```
+

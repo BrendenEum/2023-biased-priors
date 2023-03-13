@@ -1,0 +1,176 @@
+---
+title: "BP: Data Cleaning"
+author: Brenden Eum
+date: February 14, 2023
+output: 
+  html_document: 
+    theme: united
+    toc: yes
+    toc_float: yes
+    toc_depth: 2
+    number_sections: yes
+    code_folding: hide
+    df_print: default
+---
+
+# Preamble
+
+Start fresh, set seed, load libraries, set directories.
+
+```{r load, message=FALSE, warning=FALSE}
+
+rm(list = ls())
+seed = 1337
+library(dplyr)      # pipeline %>%
+
+datadir <- '../data' #data
+figdir <- '../00 pilot/figures' #figures
+outdir <- '../00 pilot/output' #output
+tempdir <- '../00 pilot/temp' #temp folder
+
+```
+
+
+# Load Data
+
+* Read the csv file with all the subject data. 
+* Make a list of variables that you're interested in, and only keep those in the main data set.
+* Only keep subjects that completed the task.
+
+```{r}
+
+variables_of_interest <- c(
+  "Participant.Status", #       Make sure subjects completed the experiment
+  "Participant.Private.ID", #   Unidentifiable subject ID number
+  "trial", #                    Randomized numbering of trials (you'll need to overwrite this later)
+  "block", #                    Randomized numbering of blocks
+  "display", #                  Display name from Gorilla
+  "Screen.Name", #              Screen name from Gorilla
+  "Response", #                 Subject's response
+  "Reaction.Time", #            Reaction time in ms
+  "duration", #                 How long was the stimulus displayed for? (ms)
+  "Correct", #                  Did subject's response match the correct answer (1=Y, 0=N)
+  "ANSWER", #                   What was the correct answer?
+  "stimulus", #                 Which stimulus was used? ("blue" or "red", followed by an ID number for the randomly generated stimulus)
+  "sanity", #                   Was this a sanity check trial? (i.e. a trial where the outcome is easy to determine, say 80% red)
+  "bias"  #                     What color is favored this block? (i.e. 60% of trials favor red)
+)
+
+data.raw <- read.csv(
+  file = file.path(datadir, "pilotdata_exp_105297-v6_task-unu1.csv")
+)
+
+data.main <- data.raw[data.raw$Participant.Status=="complete", variables_of_interest]
+
+```
+
+
+# data.main Cleaning and Transformation
+
+* Rename columns.
+* Factorize.
+* Drop NA.
+
+```{r}
+
+# Rename certain columns.
+
+data.main <- data.main %>%
+  rename(
+    subject = "Participant.Private.ID",
+    screen = "Screen.Name",         
+    response = "Response",             
+    rt = "Reaction.Time",      
+    stimDur = "duration",
+    correct = "Correct",            
+    correctResponse = "ANSWER",
+    sanity = "sanity",
+    bias = "bias"
+  )
+
+# Factorize subject number.
+
+data.main$subject <- data.main$subject %>%
+  factor() %>%
+  as.numeric() %>%
+  factor()
+
+# Create a mapping from subject, trial to stimulus duration.
+
+rawStimDur <- data.main[data.main$display == "Trial" & data.main$screen == "Stimulus", c("subject", "trial", "rt")]
+rawStimDur <- rawStimDur %>% rename(stimDur.raw = "rt")
+
+# Prune data.main down to just the response screens.
+
+data.main <- data.main[data.main$display == "Trial" & data.main$screen == "Response",]
+
+# Add new trial numbers and blocks to data.main.
+
+data.main <- data.main %>%
+  group_by(subject) %>%
+  mutate(
+    trial = row_number()
+  )
+data.main[data.main$trial <= 100, "block"] <- 1
+data.main[data.main$trial > 100 & data.main$trial <= 200, "block"] <- 2
+data.main[data.main$trial > 200 & data.main$trial <= 300, "block"] <- 3
+data.main[data.main$trial > 300 & data.main$trial <= 400, "block"] <- 4
+
+# Round rt to nearest 1 ms.
+
+data.main$rt <- data.main$rt %>% as.numeric() %>% round()
+
+# Add raw stimulus durations for comparison... but will probably end up using "duration" variable since it's already rounded.
+
+data.main$simDur.raw <- rawStimDur$stimDur.raw
+
+# Change response and correctResponse to numeric (1 = Left, 0 = Right).
+
+data.main$response <- ifelse(data.main$response=="left", 1, 0)
+data.main$correctResponse <- ifelse(data.main$correctResponse=="left", 1, 0)
+
+
+```
+
+
+# data.main Quality Filter
+
+* Drop if...
+  * Did not complete experiment.
+  * <90% accuracy in sanity checks.
+  
+```{r}
+
+# Check if status == complete. Then drop the variable after.
+
+dropped.statusIncomplete <- unique(data.main[data.main$Participant.Status!="complete", "subject"])
+data.main <- data.main[data.main$Participant.Status=="complete", ]
+data.main <- select(data.main,-"Participant.Status")
+
+# Drop if <90% accuracy in sanity checks.
+
+QC <- data.main[data.main$sanity==1,] %>%
+  group_by(subject) %>%
+  summarize(
+    accuracy = mean(correct)
+  )
+dropped.QC <- unique(QC[QC$accuracy<.9, "subject"])
+for (sub in dropped.QC$subject) {
+  data.main <- data.main[data.main$subject != sub,]
+}
+
+```
+
+
+# Save data.main
+
+* Write data.main to a csv.
+
+```{r}
+
+write.csv(
+  data.main, 
+  file.path(outdir, "data.main.csv")
+)
+
+```
