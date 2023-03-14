@@ -1,2 +1,0 @@
-If subjects make each decision within half a second, then the experiment portion should take 44 minutes. Add instruction time plus text screen times, this should total around 60 minutes for the full experiment.
-If subjects fail to make a decision in each trial (i.e. they wait the full 2 seconds), then the experiment portion should take 65 minutes. Add instruction time and text screens, the full experiment should take roughly 80 minutes.
