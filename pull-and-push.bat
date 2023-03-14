@@ -1,5 +1,6 @@
+set /p commitMessage=Commit message:
 git pull
 git add .
-git commit -a -m "Automatic pull-push using shell script"
+git commit -a -m "%commitMessage%"
 git push
 cmd /k
