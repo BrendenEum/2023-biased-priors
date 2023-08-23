@@ -62,7 +62,7 @@ variables_of_interest <- c(
 )
 
 data.raw <- read.csv(
-  file = file.path(rawdatadir, "pilotdata_exp_105297-v6_task-unu1.csv")
+  file = file.path(rawdatadir, "pilot_2_v10.csv")
 )
 
 data.main <- data.raw[data.raw$Participant.Status=="complete", variables_of_interest]
@@ -163,6 +163,24 @@ dropped.QC <- unique(QC[QC$accuracy<.9, "subject"])
 for (sub in dropped.QC$subject) {
   data.main <- data.main[data.main$subject != sub,]
 }
+
+# Store the results to text files.
+
+num_passedQC <- data.main$subject %>% unique() %>% length() 
+num_failedQC <- dropped.QC$subject %>% unique() %>% length() 
+num_totalSub <- num_passedQC + num_failedQC 
+writeLines(
+  toString(num_passedQC), 
+  file.path(final.txtdir, "n_passedQC.txt")
+)
+writeLines(
+  toString(num_failedQC), 
+  file.path(final.txtdir, "n_failedQC.txt")
+)
+writeLines(
+  toString(num_totalSub), 
+  file.path(final.txtdir, "n_subjectsPreQC.txt")
+)
 
 ```
 
